@@ -1,0 +1,31 @@
+{
+  "mappings": {
+    "properties": {
+      "incident_id": { "type": "keyword" },
+      "case_id": { "type": "keyword" },
+      "narrative": { "type": "text" },
+      "root_cause_service": { "type": "keyword" },
+      "resolution_action": { "type": "keyword" },
+      "confidence_score": { "type": "float" },
+      "action_taken": { "type": "keyword" },
+      "time_to_detection_seconds": { "type": "float" },
+      "time_to_innocent_seconds": { "type": "float" },
+      "time_to_resolution_seconds": { "type": "float" },
+      "generated_at": { "type": "date" },
+      "factor_scores": {
+        "type": "object",
+        "properties": {
+          "runbook_match": { "type": "float" },
+          "dna_match": { "type": "float" },
+          "blast_radius_clarity": { "type": "float" },
+          "deployment_correlation": { "type": "float" },
+          "remediation_safety": { "type": "float" }
+        }
+      }
+    }
+  },
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0
+  }
+}

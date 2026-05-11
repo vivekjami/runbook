@@ -1,0 +1,17 @@
+{
+  "mappings": {
+    "properties": {
+      "incident_id": { "type": "keyword" },
+      "action_taken": { "type": "keyword" },
+      "closed_by": { "type": "keyword" },
+      "resolution_time_seconds": { "type": "integer" },
+      "closed_at": { "type": "date" },
+      "severity": { "type": "keyword" },
+      "notes": { "type": "text" }
+    }
+  },
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0
+  }
+}

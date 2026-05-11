@@ -1,0 +1,61 @@
+# RunBook Configuration Template
+# Copy this file to config.yaml and fill in your values.
+# Never commit config.yaml to git — it is in .gitignore.
+
+elastic:
+  cloud_id: "your-deployment:dXMtZWFzdC0xLmF3cy5mb3VuZC5pbyQ..."  # From Elastic Cloud console
+  endpoint: "https://your-deployment.es.us-east-1.aws.found.io"
+  api_key: "YOUR_ELASTIC_API_KEY"
+  index_prefix: "runbook"   # All indices created as {prefix}_embeddings, {prefix}_dna, etc.
+  embedding_dimensions: 768  # Must match your chosen Gemini embedding model output
+
+google_cloud:
+  project_id: "your-gcp-project-id"
+  region: "us-central1"
+  service_account_key_path: "./gcp-service-account.json"  # Path to downloaded JSON key
+
+gemini:
+  model: "gemini-2.5-pro"                         # Reasoning model (Gemini 2.5 Pro via Vertex AI)
+  embedding_model: "text-embedding-004"            # 768 dimensions — use this for demo speed
+  # embedding_model: "text-embedding-large-exp-03-07"  # 3072 dimensions — higher accuracy, slower
+  max_tool_calls_per_incident: 15                  # Safety limit on agent tool loop depth
+  temperature: 0.1                                 # Low temperature for consistent reasoning
+
+agent:
+  shadow_mode: true                   # true = log predicted actions, do not execute
+  confidence_threshold: 85            # Auto-remediate above this score, escalate below
+  shadow_mode_observation_days: 14    # Days in Shadow Mode before prompting to go live
+  max_investigation_seconds: 45       # Target: full investigation completes in under 45s
+
+mcp_server:
+  host: "0.0.0.0"
+  port: 8080
+  cloud_run_url: ""  # Set after deploying: https://runbook-mcp-xxxx-uc.a.run.app
+  require_auth: true  # Requires Authorization header matching mcp_server.api_key
+  api_key: "GENERATE_A_RANDOM_SECRET_HERE"
+
+remediation:
+  # Kubernetes connection (for pod restart / scale tools)
+  kubeconfig_path: ""       # Leave empty to use in-cluster config (Cloud Run with Workload Identity)
+  default_namespace: "production"
+  dry_run_all: false        # Set to true to force dry_run on all remediation tools regardless of shadow_mode
+
+escalation:
+  slack_webhook_url: ""     # Optional — leave empty to skip Slack notifications
+  slack_channel: "#incidents"
+  email_to: ""              # Optional SMTP recipient for escalation emails
+  smtp_host: ""
+  smtp_port: 587
+  smtp_user: ""
+  smtp_password: ""
+
+demo:
+  # Settings used by inject-incident.sh and verify-setup.sh
+  inject_service: "checkout-service"
+  inject_metric: "system.memory.actual.bytes"
+  inject_spike_gb: 2.1      # Memory value to inject during demo (baseline is 0.512 GB)
+  inject_duration_minutes: 4
+  historical_incident_ids:
+    - "INC-0045"
+    - "INC-0046"
+    - "INC-0047"

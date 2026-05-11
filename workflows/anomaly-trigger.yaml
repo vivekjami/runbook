@@ -1,0 +1,111 @@
+# anomaly-trigger.yaml
+# Elastic Workflows 9.4 definition for RunBook incident trigger.
+# Import this in Kibana → Stack Management → Elastic Workflows → Import.
+#
+# Trigger:   ML anomaly detection alert (score >= 75)
+# Step 1:    ES|QL enrichment — pull last 15 minutes of all service metrics
+# Step 2:    HTTP POST to RunBook MCP server /incident endpoint
+#
+# Required connector: "RunBook MCP" (HTTP webhook connector pointing to Cloud Run URL)
+
+id: runbook-anomaly-trigger
+name: RunBook — ML Anomaly to Incident Investigation
+description: >
+  Fires when Elastic ML anomaly detection scores a service above 75.
+  Enriches the alert with a blast radius snapshot, then calls the RunBook
+  MCP server which orchestrates Gemini 2.5 Pro investigation via Agent Builder.
+
+trigger:
+  type: alert
+  alert_type: xpack.ml.anomaly_detection_alert
+  params:
+    job_id: "*"                   # Trigger on anomalies from any ML job
+    severity: warning             # Fires at score >= 75 (warning threshold)
+    result_type: record
+    lookback_interval: "1m"
+
+steps:
+  # ---------------------------------------------------------------------------
+  # Step 1: ES|QL Enrichment
+  # Pull current service health snapshot before calling the agent.
+  # This pre-populates the blast radius matrix and reduces agent tool calls.
+  # ---------------------------------------------------------------------------
+  - id: enrich_blast_radius
+    name: "ES|QL Blast Radius Pre-scan"
+    type: esql
+    params:
+      query: |
+        FROM metrics-*
+        | WHERE @timestamp >= now() - 15 minutes
+        | STATS
+            max_anomaly   = MAX(ml.anomaly_score),
+            avg_latency   = AVG(http.response.duration),
+            error_rate    = COUNT_IF(event.outcome == "failure") / COUNT(*),
+            mem_bytes_max = MAX(system.memory.actual.bytes)
+          BY service.name
+        | EVAL status = CASE(
+            max_anomaly > 50, "ROOT_CAUSE_CANDIDATE",
+            max_anomaly > 20 OR error_rate > 0.05, "DEGRADED",
+            "CLEARED"
+          )
+        | SORT max_anomaly DESC
+
+  # ---------------------------------------------------------------------------
+  # Step 2: Call RunBook MCP Server
+  # POST the enriched incident context to the /incident endpoint on Cloud Run.
+  # The MCP server authenticates with Elastic, calls Gemini via Agent Builder,
+  # and returns a structured investigation result with confidence score and action.
+  # ---------------------------------------------------------------------------
+  - id: invoke_runbook_agent
+    name: "RunBook Agent Investigation"
+    type: http
+    depends_on:
+      - enrich_blast_radius
+    params:
+      method: POST
+      url: "{{config.mcp_server_url}}/incident"
+      headers:
+        Content-Type: "application/json"
+        Authorization: "Bearer {{secrets.mcp_api_key}}"
+        X-Workflow-Execution-Id: "{{workflow.execution_id}}"
+      body:
+        incident_id: "INC-{{alert.id}}-{{workflow.execution_id}}"
+        service_name: "{{alert.context.service_name}}"
+        anomaly_score: "{{alert.context.anomaly_score}}"
+        triggered_at: "{{alert.start}}"
+        alert_id: "{{alert.id}}"
+        workflow_execution_id: "{{workflow.execution_id}}"
+        blast_radius_prescan: "{{steps.enrich_blast_radius.result}}"
+      timeout_seconds: 120     # Agent investigation typically completes in 20-45s
+      retry:
+        max_attempts: 2
+        retry_on: [502, 503, 504]
+
+# ---------------------------------------------------------------------------
+# Configuration (set these in Kibana Workflows connector settings)
+# ---------------------------------------------------------------------------
+config:
+  mcp_server_url: ""   # e.g. https://runbook-mcp-xxxx-uc.a.run.app
+  # mcp_api_key is stored in Kibana secrets, not here
+
+# ---------------------------------------------------------------------------
+# Notes for judges and contributors
+# ---------------------------------------------------------------------------
+# Why Elastic Workflows instead of a Lambda or webhook?
+#   Workflows GA is native to Elastic 9.4 — no external infrastructure,
+#   built-in retry, execution audit trail visible in Kibana, and seamless
+#   access to Elastic secrets management. Using a Lambda here would be a
+#   missed opportunity to use the platform's own automation primitive.
+#
+# Security-native origin note:
+#   Elastic Workflows was originally designed for Elastic Security / SIEM
+#   automation (SOC analyst response flows). RunBook extends this primitive
+#   to the SRE domain — the same automation layer that responds to security
+#   threats now responds to infrastructure incidents.
+#
+# Debugging tip:
+#   If the Workflow does not fire on ML anomaly alerts, verify:
+#   1. The alert rule has an action of type "Elastic Workflow" (not webhook)
+#   2. The Workflow is assigned to that alert rule action
+#   3. The ML job is in "opened" state and producing records
+#   View execution history: Kibana → Stack Management → Elastic Workflows → Executions

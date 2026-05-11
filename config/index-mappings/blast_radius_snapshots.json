@@ -1,0 +1,28 @@
+{
+  "mappings": {
+    "properties": {
+      "incident_id": { "type": "keyword" },
+      "triggered_by_alert_id": { "type": "keyword" },
+      "snapshot_at": { "type": "date" },
+      "time_to_innocent_seconds": { "type": "float" },
+      "cleared_services": { "type": "keyword" },
+      "service_health": {
+        "type": "nested",
+        "properties": {
+          "service_name": { "type": "keyword" },
+          "status": { "type": "keyword" },
+          "anomaly_score": { "type": "float" },
+          "p99_latency_ms": { "type": "float" },
+          "error_rate": { "type": "float" },
+          "memory_bytes": { "type": "long" },
+          "cpu_percent": { "type": "float" }
+        }
+      }
+    }
+  },
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "index.lifecycle.name": "90-day-retention"
+  }
+}

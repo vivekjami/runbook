@@ -1,0 +1,28 @@
+{
+  "mappings": {
+    "properties": {
+      "title": { "type": "text", "analyzer": "english" },
+      "content": { "type": "text", "analyzer": "english" },
+      "source_url": { "type": "keyword" },
+      "source_type": { "type": "keyword" },
+      "last_updated": { "type": "date" },
+      "chunk_index": { "type": "integer" },
+      "service_tags": { "type": "keyword" },
+      "embedding": {
+        "type": "dense_vector",
+        "dims": 768,
+        "index": true,
+        "similarity": "cosine",
+        "index_options": {
+          "type": "hnsw",
+          "m": 16,
+          "ef_construction": 100
+        }
+      }
+    }
+  },
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0
+  }
+}

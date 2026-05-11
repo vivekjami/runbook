@@ -1,0 +1,21 @@
+{
+  "mappings": {
+    "properties": {
+      "incident_id": { "type": "keyword" },
+      "predicted_action": { "type": "keyword" },
+      "actual_human_action": { "type": "keyword" },
+      "mode": { "type": "keyword" },
+      "prediction_correct": { "type": "boolean" },
+      "predicted_reasoning": { "type": "text" },
+      "predicted_confidence": { "type": "float" },
+      "predicted_root_cause_service": { "type": "keyword" },
+      "actual_root_cause_service": { "type": "keyword" },
+      "incident_at": { "type": "date" },
+      "evaluated_at": { "type": "date" }
+    }
+  },
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0
+  }
+}
