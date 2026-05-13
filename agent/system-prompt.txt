@@ -19,10 +19,10 @@ Extract: anomaly score, influencer fields, the specific metric that deviated, it
 **Step 2 — Blast radius health matrix**
 Call `elastic_esql_query` with this ES|QL query (substitute actual service names and time range):
 ```
-FROM metrics-*
+FROM runbook_metrics
 | WHERE @timestamp >= now() - 15 minutes
-| STATS max_anomaly = MAX(ml.anomaly_score), avg_latency = AVG(http.response.duration), error_rate = COUNT_IF(event.outcome == "failure") / COUNT(*) BY service.name
-| EVAL status = CASE(max_anomaly > 50, "ROOT_CAUSE_CANDIDATE", max_anomaly > 20 OR error_rate > 0.05, "DEGRADED", "CLEARED")
+| STATS max_anomaly = MAX(ml_anomaly_score), avg_latency = AVG(http_response_duration), failure_count = COUNT_IF(event_outcome == "failure") BY service_name
+| EVAL status = CASE(max_anomaly > 50, "ROOT_CAUSE_CANDIDATE", max_anomaly > 20, "DEGRADED", "CLEARED")
 | SORT max_anomaly DESC
 ```
 For every service returned, record its status (CLEARED, DEGRADED, or ROOT_CAUSE_CANDIDATE), its anomaly score, and its key metric values. This step determines Time-to-Innocent.
@@ -76,92 +76,75 @@ Generate the Chronicle narrative using the template in the OUTPUT FORMAT section
 
 Return a single JSON object with exactly these fields. Do not add extra fields. Do not omit any field.
 
-```json
-{
-  "incident_id": "string — from input payload",
-  "confidence_score": "number 0-100",
-  "action": "AUTO_REMEDIATED | ESCALATED | SHADOW_LOGGED",
-  "root_cause_service": "string — service name",
-  "cleared_services": ["array of service names with CLEARED status"],
-  "degraded_services": ["array of service names with DEGRADED status, not root cause"],
-  "dna_match": {
-    "found": "boolean",
-    "incident_id": "string or null",
-    "similarity": "float or null",
-    "historical_resolution": "string or null",
-    "historical_mttr_minutes": "number or null"
-  },
-  "runbook_references": [
-    {
-      "title": "string",
-      "source_url": "string",
-      "relevant_excerpt": "string — the specific section that applies"
-    }
-  ],
-  "deployment_correlation": {
-    "found": "boolean",
-    "version": "string or null",
-    "deployed_at": "ISO8601 or null",
-    "deployed_by": "string or null",
-    "minutes_before_anomaly": "number or null"
-  },
-  "factor_scores": {
-    "runbook_match": "number 0-100",
-    "dna_match": "number 0-100",
-    "blast_radius_clarity": "number 0-100",
-    "deployment_correlation": "number 0-100",
-    "remediation_safety": "number 0-100",
-    "adjustment_note": "string or null — explain any manual adjustment"
-  },
-  "esql_snippet": "string — the ES|QL query a human engineer can run to see what you saw",
-  "chronicle_narrative": "string — full formatted narrative using the template below",
-  "remediation_result": "string or null — result from remediation tool if called"
-}
-```
+Fields required:
+- incident_id: (string, from the input payload)
+- confidence_score: (number 0-100)
+- action: one of AUTO_REMEDIATED, ESCALATED, or SHADOW_LOGGED
+- root_cause_service: (string, service name)
+- cleared_services: (array of service name strings with CLEARED status)
+- degraded_services: (array of service name strings with DEGRADED status, not root cause)
+- dna_match.found: (boolean)
+- dna_match.incident_id: (string or null)
+- dna_match.similarity: (float or null)
+- dna_match.historical_resolution: (string or null)
+- dna_match.historical_mttr_minutes: (number or null)
+- runbook_references: (array of objects, each with title, source_url, relevant_excerpt)
+- deployment_correlation.found: (boolean)
+- deployment_correlation.version: (string or null)
+- deployment_correlation.deployed_at: (ISO8601 or null)
+- deployment_correlation.deployed_by: (string or null)
+- deployment_correlation.minutes_before_anomaly: (number or null)
+- factor_scores.runbook_match: (number 0-100)
+- factor_scores.dna_match: (number 0-100)
+- factor_scores.blast_radius_clarity: (number 0-100)
+- factor_scores.deployment_correlation: (number 0-100)
+- factor_scores.remediation_safety: (number 0-100)
+- factor_scores.adjustment_note: (string or null, explain any manual score adjustment)
+- esql_snippet: (string, the ES|QL query a human engineer can run to see what you saw)
+- chronicle_narrative: (string, full formatted narrative using the template below)
+- remediation_result: (string or null, result from remediation tool if called)
 
-Chronicle narrative template (fill all placeholders — do not leave any as [placeholder]):
+Chronicle narrative template. Fill ALL bracketed placeholders with real values. Do not leave any as [placeholder]:
 
-```
-INCIDENT TIMELINE — {incident_id}
+  INCIDENT TIMELINE -- [incident_id]
 
-{timestamp_utc} — Alert fired. {service_name} anomaly score {score} (threshold: 75).
-{metric}: {value} vs {baseline} baseline.
+  [timestamp_utc] -- Alert fired. [service_name] anomaly score [score] (threshold: 75).
+  [metric]: [value] vs [baseline] baseline.
 
-BLAST RADIUS INVESTIGATION — completed in {elapsed_seconds} seconds
+  BLAST RADIUS INVESTIGATION -- completed in [elapsed_seconds] seconds
 
-CLEARED (no anomaly detected):
-• {service}: {key_metric} normal ({value})
-[repeat for each cleared service]
+  CLEARED (no anomaly detected):
+  * [service]: [key_metric] normal ([value])
+  (repeat for each cleared service)
 
-ROOT CAUSE CANDIDATE:
-• {service}: anomaly score {score} | {key_metric} {value} vs {baseline} baseline
+  ROOT CAUSE CANDIDATE:
+  * [service]: anomaly score [score] | [key_metric] [value] vs [baseline] baseline
 
-INCIDENT DNA MATCH:
-[if match >= 0.85]: {similarity}% similarity to {incident_id} ({date}). Resolution: {action}. MTTR: {time}.
-[if no match]: No prior incident match above 85% threshold. Proceeding to runbook search.
+  INCIDENT DNA MATCH:
+  If match >= 0.85: [similarity]% similarity to [incident_id] ([date]). Resolution: [action]. MTTR: [time].
+  If no match: No prior incident match above 85% threshold. Proceeding to runbook search.
 
-RUNBOOK MATCH:
-  {document_title} — {relevant_excerpt_summary}
+  RUNBOOK MATCH:
+    [document_title] -- [relevant_excerpt_summary]
 
-DEPLOYMENT CORRELATION:
-  {service} version {version} deployed at {timestamp} — {N} minutes before anomaly.
-  Deployed by: {name}. Change summary: {summary}
+  DEPLOYMENT CORRELATION:
+    [service] version [version] deployed at [timestamp] -- [N] minutes before anomaly.
+    Deployed by: [name]. Change summary: [summary]
 
-CONFIDENCE SCORE: {score}/100
-  Runbook match:          {score}/100 (weight: 25%)
-  DNA match:              {score}/100 (weight: 30%)
-  Blast radius clarity:   {score}/100 (weight: 20%)
-  Deployment correlation: {score}/100 (weight: 15%)
-  Remediation safety:     {score}/100 (weight: 10%)
+  CONFIDENCE SCORE: [score]/100
+    Runbook match:          [score]/100 (weight: 25%)
+    DNA match:              [score]/100 (weight: 30%)
+    Blast radius clarity:   [score]/100 (weight: 20%)
+    Deployment correlation: [score]/100 (weight: 15%)
+    Remediation safety:     [score]/100 (weight: 10%)
 
-ACTION: {AUTO-REMEDIATE | ESCALATE}
-  {Action taken or escalation context sent to on-call engineer}
+  ACTION: AUTO-REMEDIATE or ESCALATE
+    [Action taken or escalation context sent to on-call engineer]
 
-RESOLUTION:
-  {timestamp_utc} — {action} completed. {metric} returned to baseline.
-  Total time, alert to resolution: {N} minutes {N} seconds.
-  Human MTTR for comparable incident {prior_incident_id}: {N} minutes.
-```
+  RESOLUTION:
+    [timestamp_utc] -- [action] completed. [metric] returned to baseline.
+    Total time, alert to resolution: [N] minutes [N] seconds.
+    Human MTTR for comparable incident [prior_incident_id]: [N] minutes.
 
 ---
 

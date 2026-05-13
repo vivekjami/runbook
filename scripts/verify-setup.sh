@@ -8,7 +8,7 @@ set -euo pipefail
 
 ELASTIC_URL="${ELASTIC_URL:?Set ELASTIC_URL}"
 ELASTIC_API_KEY="${ELASTIC_API_KEY:?Set ELASTIC_API_KEY}"
-MCP_SERVER_URL="${MCP_SERVER_URL:-http://localhost:8080}"
+MCP_SERVER_URL="${MCP_SERVER_URL:-https://runbook-mcp-364259905141.us-central1.run.app}"
 INDEX_PREFIX="${INDEX_PREFIX:-runbook}"
 
 auth_header="Authorization: ApiKey ${ELASTIC_API_KEY}"
@@ -18,18 +18,19 @@ check() {
   local name="$1"; local cmd="$2"
   echo -n "  $name... "
   if eval "$cmd" &>/dev/null; then
-    echo "✓"; (( PASS++ ))
+    echo "✓"; PASS=$((PASS+1))
   else
-    echo "✗ FAILED"; (( FAIL++ ))
+    echo "✗ FAILED"; FAIL=$((FAIL+1))
   fi
 }
 
 echo "=== RunBook Health Check ==="
 echo ""
 
-echo "[ Elastic Cluster ]"
-check "Cluster reachable" \
-  "curl -sf -H '$auth_header' '${ELASTIC_URL}/_cluster/health?timeout=5s'"
+echo "[ Elastic Connectivity ]"
+# /_cluster/health is not available on Elastic Serverless — probe a known index instead
+check "Elastic reachable (runbook_runbook_embeddings exists)" \
+  "curl -sf -o /dev/null -H '$auth_header' '${ELASTIC_URL}/${INDEX_PREFIX}_runbook_embeddings'"
 
 echo ""
 echo "[ Elastic Indices ]"
@@ -50,17 +51,17 @@ echo "[ Runbook Data ]"
 count=$(curl -sf -H "$auth_header" "${ELASTIC_URL}/${INDEX_PREFIX}_runbook_embeddings/_count" | python3 -c "import sys,json;print(json.load(sys.stdin)['count'])" 2>/dev/null || echo 0)
 echo -n "  Runbook chunks indexed: ${count}... "
 if [[ "$count" -gt 0 ]]; then
-  echo "✓"; (( PASS++ ))
+  echo "✓"; PASS=$((PASS+1))
 else
-  echo "✗ FAILED — run: bash scripts/ingest-runbooks.sh"; (( FAIL++ ))
+  echo "✗ FAILED — run: python3 scripts/ingest_runbooks.py"; FAIL=$((FAIL+1))
 fi
 
 dna_count=$(curl -sf -H "$auth_header" "${ELASTIC_URL}/${INDEX_PREFIX}_incident_dna/_count" | python3 -c "import sys,json;print(json.load(sys.stdin)['count'])" 2>/dev/null || echo 0)
 echo -n "  DNA records (historical incidents): ${dna_count}... "
 if [[ "$dna_count" -ge 3 ]]; then
-  echo "✓"; (( PASS++ ))
+  echo "✓"; PASS=$((PASS+1))
 else
-  echo "✗ FAILED — need INC-0045, INC-0046, INC-0047 in incident_dna"; (( FAIL++ ))
+  echo "✗ FAILED — need INC-0045, INC-0046, INC-0047 in incident_dna"; FAIL=$((FAIL+1))
 fi
 
 echo ""
@@ -68,7 +69,7 @@ echo "[ MCP Server ]"
 check "MCP server /health responds" \
   "curl -sf '${MCP_SERVER_URL}/health' | grep -q '\"status\"'"
 check "MCP server elastic_connected" \
-  "curl -sf '${MCP_SERVER_URL}/health' | grep -q '\"elastic_connected\": true'"
+  "curl -sf '${MCP_SERVER_URL}/health' | grep -q 'elastic_connected.*true'"
 
 echo ""
 echo "==========================="

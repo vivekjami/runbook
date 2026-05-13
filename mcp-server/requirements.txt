@@ -6,3 +6,6 @@ google-cloud-aiplatform>=1.57.0
 vertexai>=1.57.0
 kubernetes>=29.0.0
 python-multipart>=0.0.9
+fastapi-mcp>=0.3.0
+mcp[cli]
+mcp[cli]

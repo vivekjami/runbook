@@ -144,3 +144,6 @@ vite.config.ts.timestamp-*
 
 .idea/
 config/config.yaml
+gcp-service-account.json
+.venv/
+.env

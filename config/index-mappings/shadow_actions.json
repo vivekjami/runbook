@@ -13,9 +13,5 @@
       "incident_at": { "type": "date" },
       "evaluated_at": { "type": "date" }
     }
-  },
-  "settings": {
-    "number_of_shards": 1,
-    "number_of_replicas": 0
   }
 }

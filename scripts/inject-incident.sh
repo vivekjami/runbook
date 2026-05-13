@@ -48,8 +48,8 @@ for i in $(seq 0 3); do
     else
       mem=314572800  # 300MB
     fi
-    bulk_body+='{"index":{"_index":"metrics-runbook-demo"}}'$'\n'
-    bulk_body+="{\"@timestamp\":${ts},\"service\":{\"name\":\"${svc}\"},\"system\":{\"memory\":{\"actual\":{\"bytes\":${mem}}}},\"http\":{\"response\":{\"duration\":$(( RANDOM % 50 + 100 ))}},\"event\":{\"outcome\":\"success\"},\"ml\":{\"anomaly_score\":0}}"$'\n'
+    bulk_body+='{"index":{"_index":"runbook_metrics"}}'$'\n'
+    bulk_body+="{\"@timestamp\":${ts},\"service_name\":\"${svc}\",\"memory_bytes\":${mem},\"http_response_duration\":$(( RANDOM % 50 + 100 )),\"event_outcome\":\"success\",\"ml_anomaly_score\":0}"$'\n'
   done
 done
 push_bulk "$bulk_body"
@@ -67,12 +67,12 @@ anomaly_scores=(15 42 68 89)
 for i in $(seq 0 3); do
   ts=$(( now_epoch * 1000 + i * 60000 ))
   # Checkout-service: spiking
-  bulk_body+='{"index":{"_index":"metrics-runbook-demo"}}'$'\n'
-  bulk_body+="{\"@timestamp\":${ts},\"service\":{\"name\":\"checkout-service\"},\"system\":{\"memory\":{\"actual\":{\"bytes\":${spike_values[$i]}}}},\"http\":{\"response\":{\"duration\":$(( 200 + i * 300 ))}},\"event\":{\"outcome\":\"failure\"},\"ml\":{\"anomaly_score\":${anomaly_scores[$i]}},\"incident_id\":\"${INCIDENT_ID}\"}"$'\n'
+  bulk_body+='{"index":{"_index":"runbook_metrics"}}'$'\n'
+  bulk_body+="{\"@timestamp\":${ts},\"service_name\":\"checkout-service\",\"memory_bytes\":${spike_values[$i]},\"http_response_duration\":$(( 200 + i * 300 )),\"event_outcome\":\"failure\",\"ml_anomaly_score\":${anomaly_scores[$i]},\"incident_id\":\"${INCIDENT_ID}\"}"$'\n'
   # All other services: normal
   for svc in "payments-api" "auth-service" "product-catalog" "notification-service"; do
-    bulk_body+='{"index":{"_index":"metrics-runbook-demo"}}'$'\n'
-    bulk_body+="{\"@timestamp\":${ts},\"service\":{\"name\":\"${svc}\"},\"system\":{\"memory\":{\"actual\":{\"bytes\":314572800}}},\"http\":{\"response\":{\"duration\":$(( RANDOM % 30 + 95 ))}},\"event\":{\"outcome\":\"success\"},\"ml\":{\"anomaly_score\":2}}"$'\n'
+    bulk_body+='{"index":{"_index":"runbook_metrics"}}'$'\n'
+    bulk_body+="{\"@timestamp\":${ts},\"service_name\":\"${svc}\",\"memory_bytes\":314572800,\"http_response_duration\":$(( RANDOM % 30 + 95 )),\"event_outcome\":\"success\",\"ml_anomaly_score\":2}"$'\n'
   done
 done
 push_bulk "$bulk_body"
@@ -82,7 +82,8 @@ echo "✓"
 # Write a mock ML anomaly record so elastic_ml_scores returns a hit immediately
 # ---------------------------------------------------------------------------
 echo -n "Injecting ML anomaly record (score 89)... "
-anomaly_doc=$(cat <<EOF
+anomalyindex="runbook_ml_anomalies"
+anomalydoc=$(cat <<EOF
 {
   "@timestamp": $(( now_epoch * 1000 )),
   "job_id": "runbook-memory-anomaly",
@@ -103,8 +104,8 @@ anomaly_doc=$(cat <<EOF
 }
 EOF
 )
-curl -s -o /dev/null -X POST "${ELASTIC_URL}/.ml-anomalies-runbook-demo/_doc" \
-  -H "$auth_header" -H "$content_header" -d "$anomaly_doc"
+curl -s -o /dev/null -X POST "${ELASTIC_URL}/${anomalyindex}/_doc" \
+  -H "$auth_header" -H "$content_header" -d "$anomalydoc"
 echo "✓"
 
 # ---------------------------------------------------------------------------
