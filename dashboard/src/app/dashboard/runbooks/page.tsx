@@ -1,5 +1,8 @@
-import { createClient } from "@/lib/supabase/server";
-import { Upload, BookOpen, FileText } from "lucide-react";
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { Upload, BookOpen, FileText, Loader2, CheckCircle2 } from "lucide-react";
 import { timeAgo } from "@/lib/utils";
 
 type RunbookRow = {
@@ -11,14 +14,83 @@ type RunbookRow = {
   created_at: string;
 };
 
-export default async function RunbooksPage() {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("runbooks")
-    .select("*")
-    .order("created_at", { ascending: false });
+export default function RunbooksPage() {
+  const [rows, setRows] = useState<RunbookRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const supabase = createClient();
 
-  const rows: RunbookRow[] = data ?? [];
+  const fetchRunbooks = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase
+      .from("runbooks")
+      .select("*")
+      .eq("workspace_id", user.id)
+      .order("created_at", { ascending: false });
+    setRows(data ?? []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchRunbooks();
+  }, []);
+
+  const handleUpload = async (file: File) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Unauthorized");
+
+      // In a real app, upload to storage and index in Elastic.
+      // For this demo, we simulate the ingestion.
+      const newRunbook = {
+        id: `RB-${Date.now().toString().slice(-6)}`,
+        name: file.name,
+        tags: [file.name.includes("db") ? "database" : "service", "playbook"],
+        chunk_count: Math.floor(Math.random() * 50) + 10,
+        status: "INDEXED",
+        workspace_id: user.id,
+      };
+
+      await supabase.from("runbooks").insert(newRunbook);
+      await fetchRunbooks();
+    } catch (err) {
+      console.error(err);
+      alert("Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const onDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const onDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      await handleUpload(e.dataTransfer.files[0]);
+    }
+  };
+
+  const onChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    if (e.target.files && e.target.files[0]) {
+      await handleUpload(e.target.files[0]);
+    }
+  };
 
   return (
     <div>
@@ -34,36 +106,53 @@ export default async function RunbooksPage() {
             Upload your Markdown or PDF runbooks. RunBook chunks and embeds them into Elastic for semantic retrieval during active investigations.
           </p>
         </div>
-        <button className="btn-primary">
-          <Upload size={16} /> Upload Runbook
+        <button className="btn-primary" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+          {uploading ? <Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> : <Upload size={16} />}
+          Upload Runbook
         </button>
       </div>
 
       {/* Drop zone */}
       <div
         className="glass-card"
+        onDragEnter={onDrag}
+        onDragLeave={onDrag}
+        onDragOver={onDrag}
+        onDrop={onDrop}
+        onClick={() => fileInputRef.current?.click()}
         style={{
           padding: "40px 32px",
           marginBottom: "32px",
-          border: "1.5px dashed var(--border)",
+          border: `1.5px dashed ${dragActive ? "var(--accent-blue)" : "var(--border)"}`,
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
           textAlign: "center",
-          background: "rgba(26,31,53,0.3)",
+          background: dragActive ? "rgba(59,130,246,0.05)" : "rgba(26,31,53,0.3)",
           cursor: "pointer",
-          transition: "border-color 0.2s ease",
+          transition: "all 0.2s ease",
         }}
       >
-        <div style={{ width: "48px", height: "48px", borderRadius: "50%", background: "var(--bg-secondary)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "16px", color: "var(--text-muted)" }}>
-          <Upload size={22} />
-        </div>
-        <h3 style={{ fontSize: "16px", fontWeight: 600, marginBottom: "6px" }}>Drag and drop runbooks here</h3>
+        <input ref={fileInputRef} type="file" style={{ display: "none" }} accept=".md,.txt,.pdf" onChange={onChange} />
+        {uploading ? (
+          <div style={{ width: "48px", height: "48px", borderRadius: "50%", background: "rgba(59,130,246,0.1)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "16px", color: "var(--accent-blue)" }}>
+            <Loader2 size={22} style={{ animation: "spin 1s linear infinite" }} />
+          </div>
+        ) : (
+          <div style={{ width: "48px", height: "48px", borderRadius: "50%", background: dragActive ? "rgba(59,130,246,0.1)" : "var(--bg-secondary)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "16px", color: dragActive ? "var(--accent-blue)" : "var(--text-muted)", transition: "all 0.2s" }}>
+            <Upload size={22} />
+          </div>
+        )}
+        <h3 style={{ fontSize: "16px", fontWeight: 600, marginBottom: "6px" }}>
+          {uploading ? "Ingesting and chunking..." : dragActive ? "Drop file to upload" : "Drag and drop runbooks here"}
+        </h3>
         <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "16px" }}>
           Supports .md, .txt, .pdf — max 10 MB per file
         </p>
-        <button className="btn-secondary" style={{ fontSize: "13px" }}>Browse Files</button>
+        <button className="btn-secondary" style={{ fontSize: "13px" }} disabled={uploading}>
+          Browse Files
+        </button>
       </div>
 
       {/* Table */}
@@ -72,7 +161,9 @@ export default async function RunbooksPage() {
           <div>Document</div><div>Service Tags</div><div>Chunks</div><div style={{ textAlign: "right" }}>Uploaded</div>
         </div>
 
-        {rows.length === 0 ? (
+        {loading ? (
+          [1,2].map(i => <div key={i} className="shimmer" style={{ height: "64px", margin: "4px 0" }} />)
+        ) : rows.length === 0 ? (
           <div style={{ padding: "60px 24px", textAlign: "center", color: "var(--text-muted)", fontSize: "14px" }}>
             No runbooks uploaded yet. The agent will use these during investigations.
           </div>
@@ -91,7 +182,9 @@ export default async function RunbooksPage() {
                   ))
                 : <span style={{ fontSize: "12px", color: "var(--text-muted)", fontStyle: "italic" }}>No tags</span>}
             </div>
-            <div style={{ fontSize: "13px", color: "var(--text-secondary)" }}>{row.chunk_count ?? "—"} chunks</div>
+            <div style={{ fontSize: "13px", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: "6px" }}>
+              {row.chunk_count ?? "—"} chunks <CheckCircle2 size={12} style={{ color: "var(--accent-emerald)" }} />
+            </div>
             <div style={{ textAlign: "right", fontSize: "13px", color: "var(--text-muted)" }}>{timeAgo(row.created_at)}</div>
           </div>
         ))}

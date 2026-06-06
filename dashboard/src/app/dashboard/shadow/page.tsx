@@ -15,9 +15,13 @@ type ShadowRow = {
 
 export default async function ShadowModePage() {
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
   const { data } = await supabase
     .from("shadow_actions")
     .select("*")
+    .eq("workspace_id", user.id)
     .order("created_at", { ascending: false })
     .limit(50);
 
