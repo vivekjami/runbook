@@ -193,7 +193,8 @@ export async function POST() {
       created_at: new Date().toISOString(),
     };
 
-    const { error } = await supabase.from("incidents").insert(incident);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await supabase.from("incidents").insert(incident as any);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
